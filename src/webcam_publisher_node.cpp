@@ -28,18 +28,22 @@ public:
     frame_id_ = this->get_parameter("frame_id").as_string();
     max_retries_ = this->get_parameter("max_retries").as_int();
 
-    publisher_ = this->create_publisher<sensor_msgs::msg::Image>("/camera/image_raw", 10);
+    publisher_ = this->create_publisher<sensor_msgs::msg::Image>(
+        "/camera/image_raw", 10);
 
     // Initial webcam setup
     if (!init_camera()) {
-      RCLCPP_ERROR(this->get_logger(), "Initial connection to camera '%s' failed. Will attempt reconnects in main loop.", device_path_.c_str());
+      RCLCPP_ERROR(this->get_logger(),
+                   "Initial connection to camera '%s' failed. Will attempt "
+                   "reconnects in main loop.",
+                   device_path_.c_str());
     }
 
     // Set up timer loop based on FPS
     auto interval = std::chrono::duration<double>(1.0 / fps_);
     timer_ = this->create_wall_timer(
-      std::chrono::duration_cast<std::chrono::milliseconds>(interval),
-      std::bind(&WebcamPublisher::timer_callback, this));
+        std::chrono::duration_cast<std::chrono::milliseconds>(interval),
+        std::bind(&WebcamPublisher::timer_callback, this));
   }
 
   ~WebcamPublisher() override {
@@ -66,7 +70,8 @@ private:
     cap_.set(cv::CAP_PROP_FPS, fps_);
 
     retry_count_ = 0; // Reset retry counter on successful open
-    RCLCPP_INFO(this->get_logger(), "Webcam initialized successfully [%s @ %dx%d %.1f FPS]", 
+    RCLCPP_INFO(this->get_logger(),
+                "Webcam initialized successfully [%s @ %dx%d %.1f FPS]",
                 device_path_.c_str(), width_, height_, fps_);
     return true;
   }
@@ -76,13 +81,18 @@ private:
     if (!cap_.isOpened()) {
       retry_count_++;
       if (retry_count_ > max_retries_) {
-        RCLCPP_FATAL(this->get_logger(), "Exceeded maximum camera reconnect attempts (%d). Exiting process with code 1.", max_retries_);
+        RCLCPP_FATAL(this->get_logger(),
+                     "Exceeded maximum camera reconnect attempts (%d). Exiting "
+                     "process with code 1.",
+                     max_retries_);
         rclcpp::shutdown();
         std::exit(1);
       }
 
-      RCLCPP_WARN(this->get_logger(), "Camera device unavailable. Reconnect attempt %d/%d...", retry_count_, max_retries_);
-      
+      RCLCPP_WARN(this->get_logger(),
+                  "Camera device unavailable. Reconnect attempt %d/%d...",
+                  retry_count_, max_retries_);
+
       // Wait 2 seconds before retry (Backoff)
       std::this_thread::sleep_for(2s);
       init_camera();
@@ -93,7 +103,10 @@ private:
     cap_ >> frame;
 
     if (frame.empty()) {
-      RCLCPP_WARN(this->get_logger(), "Captured empty frame from webcam '%s'. Disconnecting device to trigger re-init.", device_path_.c_str());
+      RCLCPP_WARN(this->get_logger(),
+                  "Captured empty frame from webcam '%s'. Disconnecting device "
+                  "to trigger re-init.",
+                  device_path_.c_str());
       cap_.release();
       return;
     }
@@ -104,7 +117,7 @@ private:
     header.frame_id = frame_id_;
 
     sensor_msgs::msg::Image::SharedPtr msg =
-      cv_bridge::CvImage(header, "bgr8", frame).toImageMsg();
+        cv_bridge::CvImage(header, "bgr8", frame).toImageMsg();
 
     publisher_->publish(*msg);
   }
@@ -125,11 +138,12 @@ private:
 int main(int argc, char **argv) {
   rclcpp::init(argc, argv);
   auto node = std::make_shared<WebcamPublisher>();
-  
+
   try {
     rclcpp::spin(node);
   } catch (const std::exception &e) {
-    RCLCPP_ERROR(node->get_logger(), "Exception caught in main spin loop: %s", e.what());
+    RCLCPP_ERROR(node->get_logger(), "Exception caught in main spin loop: %s",
+                 e.what());
   }
 
   rclcpp::shutdown();
