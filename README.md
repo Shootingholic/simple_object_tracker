@@ -23,7 +23,13 @@ Terminal 1 (Publisher):
 ros2 run simple_object_track webcam_publisher_node --ros-args --params-file /ros2_ws/src/simple_object_track/config/webcam_param.yaml
 ```
 Terminal 2 (Python Tracker Node with Trackbars):
-Open a second terminal into the running container (docker exec -it ros2_object_tracker bash) and run:
+Open a second terminal into the running container
+
+```Bash
+docker exec -it ros2_object_tracker bash
+```
+
+and run:
 
 ```Bash
 ros2 run simple_object_track image_tracker_node

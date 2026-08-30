@@ -28,6 +28,10 @@ WORKDIR /ros2_ws
 RUN . /opt/ros/jazzy/setup.sh && \
     colcon build --symlink-install --packages-select simple_object_track
 
+# Automatically source ROS 2 environment for interactive bash sessions
+RUN echo "source /opt/ros/jazzy/setup.bash" >> /root/.bashrc && \
+    echo "if [ -f /ros2_ws/install/setup.bash ]; then source /ros2_ws/install/setup.bash; fi" >> /root/.bashrc
+
 # Copy and configure entrypoint
 COPY ros_entrypoint.sh /ros_entrypoint.sh
 RUN chmod +x /ros_entrypoint.sh

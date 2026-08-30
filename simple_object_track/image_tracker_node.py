@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
+import cv2
+from cv_bridge import CvBridge, CvBridgeError
+import numpy as np
 import rclpy
-from rclpy.node import Node
 from rclpy.executors import ExternalShutdownException
+from rclpy.node import Node
 from sensor_msgs.msg import Image
 from simple_object_track.msg import ObjectState
-from cv_bridge import CvBridge, CvBridgeError
-import cv2
-import numpy as np
+from simple_object_track.tracker import HSVObjectTracker
 
 
 def nothing(x):
@@ -21,13 +22,19 @@ class ImageTrackerNode(Node):
         self.image_sub = self.create_subscription(
             Image, "/camera/image_raw", self.image_callback, 10
         )
-
         self.state_pub = self.create_publisher(ObjectState, "/tracker/object_state", 10)
+
+        self.tracker = HSVObjectTracker()
 
         self.window_name = "Object Tracker Controls"
         cv2.namedWindow(self.window_name, cv2.WINDOW_AUTOSIZE)
 
-        # Trackbar initializations
+        # 0: Custom, 1: Red, 2: Green, 3: Blue
+        cv2.createTrackbar(
+            "Preset (0:Custom 1:R 2:G 3:B)", self.window_name, 3, 3, nothing
+        )
+
+        # Fine-tuning sliders
         cv2.createTrackbar("L - H", self.window_name, 100, 179, nothing)
         cv2.createTrackbar("L - S", self.window_name, 150, 255, nothing)
         cv2.createTrackbar("L - V", self.window_name, 50, 255, nothing)
@@ -35,9 +42,7 @@ class ImageTrackerNode(Node):
         cv2.createTrackbar("U - S", self.window_name, 255, 255, nothing)
         cv2.createTrackbar("U - V", self.window_name, 255, 255, nothing)
 
-        self.get_logger().info(
-            "Tracker initialized cleanly. Publishing to /tracker/object_state"
-        )
+        self.get_logger().info("Tracker initialized with Red/Green/Blue color presets.")
 
     def image_callback(self, msg):
         if not rclpy.ok():
@@ -46,66 +51,67 @@ class ImageTrackerNode(Node):
         try:
             frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
         except CvBridgeError as e:
-            self.get_logger().error(f"cv_bridge conversion error: {e}")
+            self.get_logger().error(f"cv_bridge error: {e}")
             return
 
-        # Always construct valid default state message (is_visible=False)
-        state_msg = ObjectState()
-        state_msg.center_x = 0
-        state_msg.center_y = 0
-        state_msg.is_visible = False
-        state_msg.confidence = 0.0
-
-        # Read Trackbars
-        l_h = cv2.getTrackbarPos("L - H", self.window_name)
-        l_s = cv2.getTrackbarPos("L - S", self.window_name)
-        l_v = cv2.getTrackbarPos("L - V", self.window_name)
-        u_h = cv2.getTrackbarPos("U - H", self.window_name)
-        u_s = cv2.getTrackbarPos("U - S", self.window_name)
-        u_v = cv2.getTrackbarPos("U - V", self.window_name)
-
-        lower_hsv = np.array([l_h, l_s, l_v])
-        upper_hsv = np.array([u_h, u_s, u_v])
-
-        # Filter Mask
-        blurred = cv2.GaussianBlur(frame, (11, 11), 0)
-        hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
-        mask = cv2.inRange(hsv, lower_hsv, upper_hsv)
-        mask = cv2.erode(mask, None, iterations=2)
-        mask = cv2.dilate(mask, None, iterations=2)
-
-        contours, _ = cv2.findContours(
-            mask.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        preset_mode = cv2.getTrackbarPos(
+            "Preset (0:Custom 1:R 2:G 3:B)", self.window_name
         )
 
-        # Process object detection
-        if len(contours) > 0:
-            c = max(contours, key=cv2.contourArea)
-            ((x, y), radius) = cv2.minEnclosingCircle(c)
+        if preset_mode == 1:
+            self.tracker.set_color_preset("RED")
+            active_color_label = "RED"
+        elif preset_mode == 2:
+            self.tracker.set_color_preset("GREEN")
+            active_color_label = "GREEN"
+        elif preset_mode == 3:
+            self.tracker.set_color_preset("BLUE")
+            active_color_label = "BLUE"
+        else:
+            # Custom HSV Trackbars
+            l_h = cv2.getTrackbarPos("L - H", self.window_name)
+            l_s = cv2.getTrackbarPos("L - S", self.window_name)
+            l_v = cv2.getTrackbarPos("L - V", self.window_name)
+            u_h = cv2.getTrackbarPos("U - H", self.window_name)
+            u_s = cv2.getTrackbarPos("U - S", self.window_name)
+            u_v = cv2.getTrackbarPos("U - V", self.window_name)
 
-            if radius > 10:
-                M = cv2.moments(c)
-                if M["m00"] != 0:
-                    center_x = int(M["m10"] / M["m00"])
-                    center_y = int(M["m01"] / M["m00"])
+            self.tracker.lower_hsv = np.array([l_h, l_s, l_v], dtype=np.uint8)
+            self.tracker.upper_hsv = np.array([u_h, u_s, u_v], dtype=np.uint8)
+            active_color_label = "CUSTOM"
 
-                    # Update message fields when visible
-                    state_msg.center_x = center_x
-                    state_msg.center_y = center_y
-                    state_msg.is_visible = True
+        is_visible, cx, cy, conf = self.tracker.process_frame(frame)
 
-                    frame_area = frame.shape[0] * frame.shape[1]
-                    state_msg.confidence = float(
-                        min(M["m00"] / (frame_area * 0.2), 1.0)
-                    )
-
-                    cv2.circle(frame, (int(x), int(y)), int(radius), (0, 255, 0), 2)
-                    cv2.circle(frame, (center_x, center_y), 5, (0, 0, 255), -1)
-
-        # Guarantee message publication on EVERY frame callback regardless of detection
+        state_msg = ObjectState()
+        state_msg.center_x = cx
+        state_msg.center_y = cy
+        state_msg.is_visible = is_visible
+        state_msg.confidence = conf
         self.state_pub.publish(state_msg)
 
-        # GUI display rendering
+        # Overlay Active Mode & Tracking Coordinates
+        cv2.putText(
+            frame,
+            f"Mode: {active_color_label}",
+            (10, 30),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.7,
+            (0, 255, 255),
+            2,
+        )
+
+        if is_visible:
+            cv2.circle(frame, (cx, cy), 5, (0, 0, 255), -1)
+            cv2.putText(
+                frame,
+                f"({cx}, {cy}) Conf: {conf:.2f}",
+                (cx + 10, cy - 10),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                (0, 255, 0),
+                2,
+            )
+
         cv2.imshow(self.window_name, frame)
         key = cv2.waitKey(1) & 0xFF
         if key == ord("q") or key == 27:
