@@ -47,6 +47,7 @@ class HSVObjectTracker:
         else:
             mask = cv2.inRange(hsv, self.lower_hsv, self.upper_hsv)
 
+        # Morphological Operations to elimate the minor noise in background
         mask = cv2.erode(mask, None, iterations=2)
         mask = cv2.dilate(mask, None, iterations=2)
 
@@ -55,10 +56,12 @@ class HSVObjectTracker:
         )
 
         if len(contours) > 0:
+            # Find the max area as the track object
             c = max(contours, key=cv2.contourArea)
             ((x, y), radius) = cv2.minEnclosingCircle(c)
 
             if radius > 10:
+                # Calculate center of mass of arbitrary shape
                 M = cv2.moments(c)
                 if M["m00"] != 0:
                     center_x = int(M["m10"] / M["m00"])
