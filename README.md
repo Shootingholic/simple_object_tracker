@@ -115,20 +115,26 @@ ls -l /dev/video*
 ```
 ## 6. Project Structure
 
-```Plaintext
+```PlaintText
 simple_object_track/
+├── README.md                     # Project Description
 ├── CMakeLists.txt                # Build configuration (C++, Python modules, ROS msgs)
 ├── package.xml                   # Package manifest & dependencies
 ├── .pre-commit-config.yaml       # Linting & formatting git hook setup
-├── msg/
+├── docker-compose.yml            # Build configuration for docker image
+├── Dockerfile                    # DockerFile for deploy
+├── ros_entrypoint.sh             # Script for enviroment settings
+├── config
+│   └── webcam_param.yaml         # Parameters for web camera (resolution, frequency, device name)
+├── msg
 │   └── ObjectState.msg           # Custom ROS 2 message specification
-├── simple_object_track/          # Inner Python package
+├── simple_object_track
+│   ├── image_tracker_node.py     # Executable ROS 2 Python tracking node
 │   ├── __init__.py
-│   ├── tracker.py                # Core HSV Computer Vision algorithm module
-│   └── image_tracker_node.py     # Executable ROS 2 Python tracking node
-├── src/
+│   └── tracker.py                # Core HSV Computer Vision algorithm module
+├── src
 │   └── webcam_publisher_node.cpp # Executable C++ camera publisher node
-└── test/
+└── test
     ├── test_tracker.py           # Pytest unit tests for HSV vision tracker
     └── test_webcam_publisher.cpp # GTest unit tests for camera node configurations
 ```
