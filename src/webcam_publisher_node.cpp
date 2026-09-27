@@ -1,5 +1,7 @@
 #include <chrono>
+#include <cmath>
 #include <memory>
+#include <stdexcept>
 #include <string>
 
 #include "cv_bridge/cv_bridge.hpp"
@@ -28,6 +30,8 @@ public:
     frame_id_ = this->get_parameter("frame_id").as_string();
     max_retries_ = this->get_parameter("max_retries").as_int();
 
+    validate_parameters();
+
     publisher_ = this->create_publisher<sensor_msgs::msg::Image>(
         "/camera/image_raw", 10);
 
@@ -53,6 +57,28 @@ public:
   }
 
 private:
+  void validate_parameters() const {
+    if (device_path_.empty()) {
+      throw std::invalid_argument("device_path must not be empty");
+    }
+    if (width_ <= 0) {
+      throw std::invalid_argument("width must be greater than 0");
+    }
+    if (height_ <= 0) {
+      throw std::invalid_argument("height must be greater than 0");
+    }
+    if (!std::isfinite(fps_) || fps_ <= 0.0 || fps_ > 1000.0) {
+      throw std::invalid_argument(
+          "fps must be finite and in the range (0, 1000]");
+    }
+    if (frame_id_.empty()) {
+      throw std::invalid_argument("frame_id must not be empty");
+    }
+    if (max_retries_ < 0) {
+      throw std::invalid_argument("max_retries must not be negative");
+    }
+  }
+
   bool init_camera() {
     if (cap_.isOpened()) {
       cap_.release();
@@ -137,13 +163,13 @@ private:
 
 int main(int argc, char **argv) {
   rclcpp::init(argc, argv);
-  auto node = std::make_shared<WebcamPublisher>();
-
   try {
+    auto node = std::make_shared<WebcamPublisher>();
     rclcpp::spin(node);
   } catch (const std::exception &e) {
-    RCLCPP_ERROR(node->get_logger(), "Exception caught in main spin loop: %s",
-                 e.what());
+    RCLCPP_FATAL(rclcpp::get_logger("webcam_publisher"), "%s", e.what());
+    rclcpp::shutdown();
+    return 1;
   }
 
   rclcpp::shutdown();
