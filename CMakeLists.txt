@@ -17,6 +17,7 @@ find_package(rosidl_default_generators REQUIRED)
 # ----------------------------------------------------
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/ObjectState.msg"
+  "msg/ObjectStateArray.msg"
 )
 
 # ----------------------------------------------------
@@ -29,6 +30,7 @@ install(
   FILES
     simple_object_track/__init__.py
     simple_object_track/tracker.py
+    simple_object_track/image_tracker_node.py
   DESTINATION "${PYTHON_INSTALL_DIR}/${PROJECT_NAME}"
 )
 

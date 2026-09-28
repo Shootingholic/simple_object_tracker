@@ -6,7 +6,7 @@ import rclpy
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from sensor_msgs.msg import Image
-from simple_object_track.msg import ObjectState
+from simple_object_track.msg import ObjectState, ObjectStateArray
 from simple_object_track.tracker import HSVObjectTracker
 
 
@@ -27,11 +27,18 @@ class ImageTrackerNode(Node):
             10,
         )
         self.state_pub = self.create_publisher(ObjectState, "/tracker/object_state", 10)
+        self.objects_pub = self.create_publisher(
+            ObjectStateArray, "/tracker/objects", 10
+        )
 
         min_object_area_percent = self.declare_parameter(
             "min_object_area_percent", 0.1
         ).value
-        self.tracker = HSVObjectTracker(min_object_area_percent=min_object_area_percent)
+        max_tracked_objects = self.declare_parameter("max_tracked_objects", 5).value
+        self.tracker = HSVObjectTracker(
+            min_object_area_percent=min_object_area_percent,
+            max_tracked_objects=max_tracked_objects,
+        )
 
         self.window_name = "Object Tracker Controls"
         cv2.namedWindow(self.window_name, cv2.WINDOW_AUTOSIZE)
@@ -87,13 +94,29 @@ class ImageTrackerNode(Node):
             self.tracker.upper_hsv = np.array([u_h, u_s, u_v], dtype=np.uint8)
             active_color_label = "CUSTOM"
 
-        is_visible, cx, cy, conf = self.tracker.process_frame(frame)
+        detections = self.tracker.process_objects(frame)
+        objects_msg = ObjectStateArray()
+        objects_msg.objects = []
+        for cx, cy, confidence in detections:
+            state_msg = ObjectState()
+            state_msg.center_x = cx
+            state_msg.center_y = cy
+            state_msg.is_visible = True
+            state_msg.confidence = confidence
+            objects_msg.objects.append(state_msg)
+        self.objects_pub.publish(objects_msg)
 
-        state_msg = ObjectState()
-        state_msg.center_x = cx
-        state_msg.center_y = cy
-        state_msg.is_visible = is_visible
-        state_msg.confidence = conf
+        is_visible = bool(detections)
+        if is_visible:
+            cx, cy, conf = detections[0]
+            state_msg = objects_msg.objects[0]
+        else:
+            cx, cy, conf = 0, 0, 0.0
+            state_msg = ObjectState()
+            state_msg.center_x = cx
+            state_msg.center_y = cy
+            state_msg.is_visible = False
+            state_msg.confidence = conf
         self.state_pub.publish(state_msg)
 
         # Overlay Active Mode & Tracking Coordinates
@@ -107,11 +130,11 @@ class ImageTrackerNode(Node):
             2,
         )
 
-        if is_visible:
+        for index, (cx, cy, conf) in enumerate(detections, start=1):
             cv2.circle(frame, (cx, cy), 5, (0, 0, 255), -1)
             cv2.putText(
                 frame,
-                f"({cx}, {cy}) Conf: {conf:.2f}",
+                f"{index}: ({cx}, {cy}) Conf: {conf:.2f}",
                 (cx + 10, cy - 10),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.5,

@@ -1,4 +1,6 @@
 # simple_object_track/tracker.py
+import heapq
+
 import cv2
 import numpy as np
 
@@ -20,7 +22,15 @@ class HSVObjectTracker:
         ),
     }
 
-    def __init__(self, lower_hsv=None, upper_hsv=None, min_object_area_percent=0.1):
+    MAX_TRACKED_OBJECTS = 10
+
+    def __init__(
+        self,
+        lower_hsv=None,
+        upper_hsv=None,
+        min_object_area_percent=0.1,
+        max_tracked_objects=5,
+    ):
         self.lower_hsv = lower_hsv if lower_hsv is not None else self.PRESETS["BLUE"][0]
         self.upper_hsv = upper_hsv if upper_hsv is not None else self.PRESETS["BLUE"][1]
         self.min_object_area_percent = float(min_object_area_percent)
@@ -29,6 +39,15 @@ class HSVObjectTracker:
             or not 0 <= self.min_object_area_percent <= 100
         ):
             raise ValueError("min_object_area_percent must be between 0 and 100.")
+        if (
+            isinstance(max_tracked_objects, bool)
+            or not isinstance(max_tracked_objects, (int, np.integer))
+            or not 1 <= max_tracked_objects <= self.MAX_TRACKED_OBJECTS
+        ):
+            raise ValueError(
+                f"max_tracked_objects must be between 1 and {self.MAX_TRACKED_OBJECTS}."
+            )
+        self.max_tracked_objects = int(max_tracked_objects)
 
     def set_color_preset(self, color_name: str):
         color_key = color_name.upper()
@@ -37,6 +56,13 @@ class HSVObjectTracker:
 
     def process_frame(self, frame):
         """Processes frame returning (is_visible, center_x, center_y, confidence)."""
+        objects = self.process_objects(frame)
+        if objects:
+            return True, *objects[0]
+        return False, 0, 0, 0.0
+
+    def process_objects(self, frame):
+        """Return up to max_tracked_objects detections, largest contour first."""
         if frame is None or frame.size == 0:
             raise ValueError("Invalid or empty frame provided.")
 
@@ -61,20 +87,24 @@ class HSVObjectTracker:
             mask.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
         )
 
-        if len(contours) > 0:
-            # Find the max area as the track object
-            c = max(contours, key=cv2.contourArea)
-            contour_area = cv2.contourArea(c)
-            frame_area = frame.shape[0] * frame.shape[1]
-            min_object_area = frame_area * self.min_object_area_percent / 100
+        frame_area = frame.shape[0] * frame.shape[1]
+        min_object_area = frame_area * self.min_object_area_percent / 100
+        candidates = [(cv2.contourArea(contour), contour) for contour in contours]
+        candidates = [
+            candidate for candidate in candidates if candidate[0] >= min_object_area
+        ]
+        candidates = heapq.nlargest(
+            self.max_tracked_objects, candidates, key=lambda candidate: candidate[0]
+        )
 
-            if contour_area >= min_object_area:
-                # Calculate center of mass of arbitrary shape
-                M = cv2.moments(c)
-                if M["m00"] != 0:
-                    center_x = int(M["m10"] / M["m00"])
-                    center_y = int(M["m01"] / M["m00"])
-                    confidence = float(contour_area / frame_area)
-                    return True, center_x, center_y, confidence
+        objects = []
+        for contour_area, contour in candidates:
+            moments = cv2.moments(contour)
+            if moments["m00"] == 0:
+                continue
+            center_x = int(moments["m10"] / moments["m00"])
+            center_y = int(moments["m01"] / moments["m00"])
+            confidence = float(contour_area / frame_area)
+            objects.append((center_x, center_y, confidence))
 
-        return False, 0, 0, 0.0
+        return objects

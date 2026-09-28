@@ -11,7 +11,7 @@ try:
     from sensor_msgs.msg import Image
 
     from simple_object_track.image_tracker_node import ImageTrackerNode
-    from simple_object_track.msg import ObjectState
+    from simple_object_track.msg import ObjectState, ObjectStateArray
 
     ROS_AVAILABLE = True
 except (ImportError, ModuleNotFoundError):
@@ -20,6 +20,7 @@ except (ImportError, ModuleNotFoundError):
     Image = None
     ImageTrackerNode = None
     ObjectState = None
+    ObjectStateArray = None
     ROS_AVAILABLE = False
 
 from simple_object_track.tracker import HSVObjectTracker
@@ -73,6 +74,43 @@ def test_minimum_object_area_percentage_filters_small_objects():
 
     assert is_visible is False
     assert (cx, cy, confidence) == (0, 0, 0.0)
+
+
+def test_detects_multiple_objects_largest_first():
+    tracker = HSVObjectTracker(min_object_area_percent=0.1)
+    img = np.zeros((400, 600, 3), dtype=np.uint8)
+    cv2.rectangle(img, (50, 150), (130, 230), (255, 0, 0), -1)
+    cv2.rectangle(img, (350, 160), (410, 220), (255, 0, 0), -1)
+
+    objects = tracker.process_objects(img)
+
+    assert len(objects) == 2
+    assert pytest.approx(objects[0][0], abs=5) == 90
+    assert pytest.approx(objects[0][1], abs=5) == 190
+    assert pytest.approx(objects[1][0], abs=5) == 380
+    assert pytest.approx(objects[1][1], abs=5) == 190
+    assert objects[0][2] > objects[1][2]
+
+
+def test_detection_count_is_limited_and_legacy_api_returns_largest():
+    tracker = HSVObjectTracker(max_tracked_objects=2)
+    img = np.zeros((400, 600, 3), dtype=np.uint8)
+    cv2.rectangle(img, (20, 150), (60, 190), (255, 0, 0), -1)
+    cv2.rectangle(img, (200, 140), (280, 220), (255, 0, 0), -1)
+    cv2.rectangle(img, (400, 150), (460, 210), (255, 0, 0), -1)
+
+    objects = tracker.process_objects(img)
+    is_visible, center_x, center_y, _ = tracker.process_frame(img)
+
+    assert len(objects) == 2
+    assert is_visible is True
+    assert (center_x, center_y) == objects[0][:2]
+
+
+@pytest.mark.parametrize("value", [0, 11, 1.5, True])
+def test_invalid_max_tracked_objects(value):
+    with pytest.raises(ValueError, match="max_tracked_objects"):
+        HSVObjectTracker(max_tracked_objects=value)
 
 
 @pytest.mark.parametrize("value", [-0.1, 100.1, float("nan")])
@@ -208,23 +246,33 @@ def test_tracker_node_publishes_object_state_for_camera_image(monkeypatch):
     def on_state(msg):
         received["state"] = msg
 
+    def on_objects(msg):
+        received["objects"] = msg
+
     listener_node.create_subscription(
         ObjectState,
         "/tracker/object_state",
         on_state,
         10,
     )
+    listener_node.create_subscription(
+        ObjectStateArray,
+        "/tracker/objects",
+        on_objects,
+        10,
+    )
     publisher = publisher_node.create_publisher(Image, "/camera/image_raw", 10)
 
     img = np.zeros((400, 400, 3), dtype=np.uint8)
     cv2.rectangle(img, (150, 150), (250, 250), (255, 0, 0), -1)
+    cv2.rectangle(img, (300, 150), (360, 210), (255, 0, 0), -1)
     bridge = CvBridge()
     frame_msg = bridge.cv2_to_imgmsg(img, encoding="bgr8")
 
     publisher.publish(frame_msg)
 
     deadline = time.time() + 3.0
-    while time.time() < deadline and "state" not in received:
+    while time.time() < deadline and not {"state", "objects"}.issubset(received):
         rclpy.spin_once(tracker_node, timeout_sec=0.05)
         rclpy.spin_once(listener_node, timeout_sec=0.05)
         rclpy.spin_once(publisher_node, timeout_sec=0.01)
@@ -241,6 +289,9 @@ def test_tracker_node_publishes_object_state_for_camera_image(monkeypatch):
     assert pytest.approx(state.center_x, abs=8) == 200
     assert pytest.approx(state.center_y, abs=8) == 200
     assert state.confidence > 0.0
+    assert len(received["objects"].objects) == 2
+    assert pytest.approx(received["objects"].objects[0].center_x, abs=8) == 200
+    assert pytest.approx(received["objects"].objects[1].center_x, abs=8) == 330
 
 
 @pytest.mark.skipif(
