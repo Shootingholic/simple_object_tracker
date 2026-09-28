@@ -41,6 +41,44 @@ def test_normal_tracking_synthetic_blue_square():
     assert pytest.approx(cx, abs=5) == 200
     assert pytest.approx(cy, abs=5) == 200
     assert conf > 0.0
+    assert conf < 1.0
+
+
+def test_minimum_object_area_is_resolution_independent():
+    tracker = HSVObjectTracker(min_object_area_percent=0.5)
+
+    for frame_size, square_size in ((400, 40), (800, 80)):
+        img = np.zeros((frame_size, frame_size, 3), dtype=np.uint8)
+        start = (frame_size - square_size) // 2
+        cv2.rectangle(
+            img,
+            (start, start),
+            (start + square_size, start + square_size),
+            (255, 0, 0),
+            -1,
+        )
+
+        is_visible, _, _, confidence = tracker.process_frame(img)
+
+        assert is_visible is True
+        assert confidence == pytest.approx(0.01, abs=0.002)
+
+
+def test_minimum_object_area_percentage_filters_small_objects():
+    tracker = HSVObjectTracker(min_object_area_percent=1.0)
+    img = np.zeros((400, 400, 3), dtype=np.uint8)
+    cv2.rectangle(img, (190, 190), (210, 210), (255, 0, 0), -1)
+
+    is_visible, cx, cy, confidence = tracker.process_frame(img)
+
+    assert is_visible is False
+    assert (cx, cy, confidence) == (0, 0, 0.0)
+
+
+@pytest.mark.parametrize("value", [-0.1, 100.1, float("nan")])
+def test_invalid_minimum_object_area_percentage(value):
+    with pytest.raises(ValueError, match="min_object_area_percent"):
+        HSVObjectTracker(min_object_area_percent=value)
 
 
 def test_no_object_detected():

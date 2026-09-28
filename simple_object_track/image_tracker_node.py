@@ -20,11 +20,18 @@ class ImageTrackerNode(Node):
 
         self.bridge = CvBridge()
         self.image_sub = self.create_subscription(
-            Image, "/camera/image_raw", self.image_callback, 10
+            # it is better to set the queue size to 1 to make sure we can get the latest frame.
+            Image,
+            "/camera/image_raw",
+            self.image_callback,
+            10,
         )
         self.state_pub = self.create_publisher(ObjectState, "/tracker/object_state", 10)
 
-        self.tracker = HSVObjectTracker()
+        min_object_area_percent = self.declare_parameter(
+            "min_object_area_percent", 0.1
+        ).value
+        self.tracker = HSVObjectTracker(min_object_area_percent=min_object_area_percent)
 
         self.window_name = "Object Tracker Controls"
         cv2.namedWindow(self.window_name, cv2.WINDOW_AUTOSIZE)

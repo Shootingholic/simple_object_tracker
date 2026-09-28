@@ -42,6 +42,10 @@ and run:
 ```Bash
 ros2 run simple_object_track image_tracker_node
 ```
+To load the tracker settings from YAML:
+```Bash
+ros2 run simple_object_track image_tracker_node --ros-args --params-file /ros2_ws/install/simple_object_track/share/simple_object_track/config/tracker_param.yaml
+```
 ---
 
 ## 2. ROS Distribution & Languages
@@ -64,6 +68,7 @@ You can adjust the camera device, resolution, and frame rate without modifying s
 | `frame_width` | `int` | `640` | Requested capture resolution width in pixels (maximum 1920). |
 | `frame_height` | `int` | `480` | Requested capture resolution height in pixels (maximum 1080). |
 | `fps` | `double` | `30.0` | Target publishing frame rate (Frames Per Second). |
+| `min_object_area_percent` | `double` | `0.1` | Minimum detected contour area as a percentage of the image area (0-100). |
 
 ### Overriding Configuration at Launch
 
@@ -75,6 +80,11 @@ ros2 run simple_object_track webcam_publisher_node --ros-args \
   -p frame_height:=720 \
   -p fps:=60.0
 ```
+
+Edit `config/tracker_param.yaml` to change the tracker's minimum contour area percentage. The node accepts command-line overrides too:
+```bash
+ros2 run simple_object_track image_tracker_node --ros-args -p min_object_area_percent:=0.2
+```
 ## 4. Custom Message Definition
 The tracking results are broadcasted over the `/tracker/object_state` topic using the custom interface `simple_object_track/msg/ObjectState.`
 
@@ -83,7 +93,7 @@ The tracking results are broadcasted over the `/tracker/object_state` topic usin
 center_x            # X-coordinate of the detected object centroid (pixels)
 int32 center_y      # Y-coordinate of the detected object centroid (pixels)
 bool is_visible     # Flag set to true if a valid target is currently tracked
-float32 confidence  # Detection confidence ratio based on target contour area [0.0 - 1.0]
+float32 confidence  # Detected contour area as a fraction of the frame [0.0 - 1.0]
 ```
 To inspect the message definition in your terminal:
 ```Bash
@@ -125,6 +135,7 @@ simple_object_track/
 ├── Dockerfile                    # DockerFile for deploy
 ├── ros_entrypoint.sh             # Script for enviroment settings
 ├── config
+│   ├── tracker_param.yaml        # Tracker parameters
 │   └── webcam_param.yaml         # Parameters for web camera (resolution, frequency, device name)
 ├── msg
 │   └── ObjectState.msg           # Custom ROS 2 message specification

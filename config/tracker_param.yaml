@@ -1,0 +1,3 @@
+image_tracker_node:
+  ros__parameters:
+    min_object_area_percent: 0.1

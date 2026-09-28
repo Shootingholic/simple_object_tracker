@@ -20,9 +20,15 @@ class HSVObjectTracker:
         ),
     }
 
-    def __init__(self, lower_hsv=None, upper_hsv=None):
+    def __init__(self, lower_hsv=None, upper_hsv=None, min_object_area_percent=0.1):
         self.lower_hsv = lower_hsv if lower_hsv is not None else self.PRESETS["BLUE"][0]
         self.upper_hsv = upper_hsv if upper_hsv is not None else self.PRESETS["BLUE"][1]
+        self.min_object_area_percent = float(min_object_area_percent)
+        if (
+            not np.isfinite(self.min_object_area_percent)
+            or not 0 <= self.min_object_area_percent <= 100
+        ):
+            raise ValueError("min_object_area_percent must be between 0 and 100.")
 
     def set_color_preset(self, color_name: str):
         color_key = color_name.upper()
@@ -58,16 +64,17 @@ class HSVObjectTracker:
         if len(contours) > 0:
             # Find the max area as the track object
             c = max(contours, key=cv2.contourArea)
-            ((x, y), radius) = cv2.minEnclosingCircle(c)
+            contour_area = cv2.contourArea(c)
+            frame_area = frame.shape[0] * frame.shape[1]
+            min_object_area = frame_area * self.min_object_area_percent / 100
 
-            if radius > 10:
+            if contour_area >= min_object_area:
                 # Calculate center of mass of arbitrary shape
                 M = cv2.moments(c)
                 if M["m00"] != 0:
                     center_x = int(M["m10"] / M["m00"])
                     center_y = int(M["m01"] / M["m00"])
-                    frame_area = frame.shape[0] * frame.shape[1]
-                    confidence = float(min(M["m00"] / (frame_area * 0.2), 1.0))
+                    confidence = float(contour_area / frame_area)
                     return True, center_x, center_y, confidence
 
         return False, 0, 0, 0.0
