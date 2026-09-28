@@ -32,6 +32,11 @@ install(
   DESTINATION "${PYTHON_INSTALL_DIR}/${PROJECT_NAME}"
 )
 
+install(
+  DIRECTORY config/
+  DESTINATION share/${PROJECT_NAME}/config
+)
+
 # ----------------------------------------------------
 # 3. C++ Webcam Publisher Node
 # ----------------------------------------------------

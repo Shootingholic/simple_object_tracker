@@ -29,7 +29,7 @@ Once inside the container shell:
 - Terminal 1 (Publisher):
 
 ```Bash
-ros2 run simple_object_track webcam_publisher_node --ros-args --params-file /ros2_ws/src/simple_object_track/config/webcam_param.yaml
+ros2 run simple_object_track webcam_publisher_node --ros-args --params-file /ros2_ws/install/simple_object_track/share/simple_object_track/config/webcam_param.yaml
 ```
 - Terminal 2 (Python Tracker Node with Trackbars):
 Open a second terminal into the running container
