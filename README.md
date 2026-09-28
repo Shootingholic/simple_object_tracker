@@ -61,8 +61,8 @@ You can adjust the camera device, resolution, and frame rate without modifying s
 | Parameter Name | Type | Default Value | Description |
 | :--- | :--- | :--- | :--- |
 | `video_device` | `string` | `/dev/video0` | Linux V4L2 device index for the camera. |
-| `frame_width` | `int` | `640` | Requested capture resolution width in pixels. |
-| `frame_height` | `int` | `480` | Requested capture resolution height in pixels. |
+| `frame_width` | `int` | `640` | Requested capture resolution width in pixels (maximum 1920). |
+| `frame_height` | `int` | `480` | Requested capture resolution height in pixels (maximum 1080). |
 | `fps` | `double` | `30.0` | Target publishing frame rate (Frames Per Second). |
 
 ### Overriding Configuration at Launch

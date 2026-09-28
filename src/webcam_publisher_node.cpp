@@ -1,5 +1,7 @@
+#include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -10,6 +12,12 @@
 #include "sensor_msgs/msg/image.hpp"
 
 using namespace std::chrono_literals;
+
+namespace {
+constexpr int kMaxWidth = 1920;
+constexpr int kMaxHeight = 1080;
+constexpr std::int64_t kMaxImagePixels = 1920LL * 1080LL;
+} // namespace
 
 class WebcamPublisher : public rclcpp::Node {
 public:
@@ -61,11 +69,15 @@ private:
     if (device_path_.empty()) {
       throw std::invalid_argument("device_path must not be empty");
     }
-    if (width_ <= 0) {
-      throw std::invalid_argument("width must be greater than 0");
+    if (width_ <= 0 || width_ > kMaxWidth) {
+      throw std::invalid_argument("width must be in the range [1, 1920]");
     }
-    if (height_ <= 0) {
-      throw std::invalid_argument("height must be greater than 0");
+    if (height_ <= 0 || height_ > kMaxHeight) {
+      throw std::invalid_argument("height must be in the range [1, 1080]");
+    }
+    if (static_cast<std::int64_t>(width_) * height_ > kMaxImagePixels) {
+      throw std::invalid_argument(
+          "image size must not exceed 1920x1080 pixels");
     }
     if (!std::isfinite(fps_) || fps_ <= 0.0 || fps_ > 1000.0) {
       throw std::invalid_argument(
@@ -135,6 +147,15 @@ private:
                   device_path_.c_str());
       cap_.release();
       return;
+    }
+
+    if (frame.cols > width_ || frame.rows > height_) {
+      const double scale = std::min(static_cast<double>(width_) / frame.cols,
+                                    static_cast<double>(height_) / frame.rows);
+      cv::resize(frame, frame,
+                 cv::Size(std::max(1, cvRound(frame.cols * scale)),
+                          std::max(1, cvRound(frame.rows * scale))),
+                 0.0, 0.0, cv::INTER_AREA);
     }
 
     // Convert OpenCV BGR Mat to ROS Image message
