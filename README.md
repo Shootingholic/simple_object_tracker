@@ -234,14 +234,25 @@ colcon test --packages-select simple_object_track
 # 4. View detailed results
 colcon test-result --all --verbose
 ```
-## 9. Tracking Approach & Limitations
+
+## 9. GitHub Actions CI/CD
+Pull requests targeting `main` and pushes to `main` or a `v*` version tag build and test the package on ROS 2 Jazzy. After successful checks, pushes publish the Docker image to GitHub Container Registry (`ghcr.io/shootingholic/simple_object_tracker`): `main` and `latest` for main-branch pushes, and the matching version tag for version releases.
+
+GitHub Container Registry packages are private by default. Change the package visibility in GitHub settings if the image should be publicly pullable.
+
+To pull a published image:
+```bash
+docker pull ghcr.io/shootingholic/simple_object_tracker:latest
+```
+
+## 10. Tracking Approach & Limitations
 ### Computer Vision Pipeline
 1. The BGR image is blurred and converted to HSV.
 2. The selected Red, Green, or Blue preset filters the frame; Red uses two hue intervals to handle wraparound. Custom HSV lower/upper bounds can be tuned with the OpenCV trackbars.
 3. Erosion and dilation reduce small mask noise. External contours below `min_object_area_percent` of the frame are discarded.
 4. The largest qualifying contours, up to `max_tracked_objects`, are selected. Image moments provide each centroid; detections are returned largest-first and confidence is contour-area/frame-area.
 
-## 10. Known Limitations & Intentional Shortcuts
+## 11. Known Limitations & Intentional Shortcuts
 - Lighting sensitivity: HSV thresholding can fail under strong shadows, reflections, or overexposure; tune the ranges for the environment.
 - Touching or overlapping objects of the selected color may form one contour and be reported as one detection.
 - The tracker processes one color range at a time and does not associate detections across frames. Array ordering is by size, not a stable object identity.

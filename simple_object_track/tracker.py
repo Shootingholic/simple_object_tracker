@@ -61,8 +61,8 @@ class HSVObjectTracker:
             return True, *objects[0]
         return False, 0, 0, 0.0
 
-    def process_objects(self, frame):
-        """Return up to max_tracked_objects detections, largest contour first."""
+    def create_mask(self, frame):
+        """Return the morphologically filtered binary mask for the active HSV range."""
         if frame is None or frame.size == 0:
             raise ValueError("Invalid or empty frame provided.")
 
@@ -82,6 +82,15 @@ class HSVObjectTracker:
         # Morphological Operations to elimate the minor noise in background
         mask = cv2.erode(mask, None, iterations=2)
         mask = cv2.dilate(mask, None, iterations=2)
+        return mask
+
+    def process_objects(self, frame, mask=None):
+        """Return up to max_tracked_objects detections, largest contour first."""
+        if frame is None or frame.size == 0:
+            raise ValueError("Invalid or empty frame provided.")
+
+        if mask is None:
+            mask = self.create_mask(frame)
 
         contours, _ = cv2.findContours(
             mask.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE

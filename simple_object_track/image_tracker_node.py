@@ -41,22 +41,70 @@ class ImageTrackerNode(Node):
         )
 
         self.window_name = "Object Tracker Controls"
-        cv2.namedWindow(self.window_name, cv2.WINDOW_AUTOSIZE)
+        self.mask_window_name = "HSV Calibration Mask"
+        cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
+        cv2.namedWindow(self.mask_window_name, cv2.WINDOW_NORMAL)
+        self.active_preset_mode = 3
+        self.latest_frame = None
+        self.calibration_status = (
+            "Choose Custom (0), then click the target to sample HSV."
+        )
 
         # 0: Custom, 1: Red, 2: Green, 3: Blue
         cv2.createTrackbar(
-            "Preset (0:Custom 1:R 2:G 3:B)", self.window_name, 3, 3, nothing
+            "Preset 0:Custom 1:Red 2:Green 3:Blue",
+            self.window_name,
+            3,
+            3,
+            nothing,
         )
 
-        # Fine-tuning sliders
-        cv2.createTrackbar("L - H", self.window_name, 100, 179, nothing)
-        cv2.createTrackbar("L - S", self.window_name, 150, 255, nothing)
-        cv2.createTrackbar("L - V", self.window_name, 50, 255, nothing)
-        cv2.createTrackbar("U - H", self.window_name, 140, 179, nothing)
-        cv2.createTrackbar("U - S", self.window_name, 255, 255, nothing)
-        cv2.createTrackbar("U - V", self.window_name, 255, 255, nothing)
+        cv2.createTrackbar("Low H", self.window_name, 100, 179, nothing)
+        cv2.createTrackbar("Low S", self.window_name, 150, 255, nothing)
+        cv2.createTrackbar("Low V", self.window_name, 50, 255, nothing)
+        cv2.createTrackbar("High H", self.window_name, 140, 179, nothing)
+        cv2.createTrackbar("High S", self.window_name, 255, 255, nothing)
+        cv2.createTrackbar("High V", self.window_name, 255, 255, nothing)
+        cv2.setMouseCallback(self.window_name, self._on_frame_click)
 
         self.get_logger().info("Tracker initialized with Red/Green/Blue color presets.")
+
+    def _on_frame_click(self, event, x, y, flags, parameter):
+        if event != cv2.EVENT_LBUTTONDOWN:
+            return
+        if self.active_preset_mode != 0:
+            self.calibration_status = "Select Custom (0) before sampling a target."
+            return
+
+        if self.latest_frame is None:
+            return
+
+        y_min = max(0, y - 4)
+        y_max = min(self.latest_frame.shape[0], y + 5)
+        x_min = max(0, x - 4)
+        x_max = min(self.latest_frame.shape[1], x + 5)
+        patch = self.latest_frame[y_min:y_max, x_min:x_max]
+        sample_bgr = np.median(patch, axis=(0, 1)).astype(np.uint8)
+        sample_hsv = cv2.cvtColor(
+            np.array([[sample_bgr]], dtype=np.uint8), cv2.COLOR_BGR2HSV
+        )[0, 0]
+
+        margins = np.array([8, 70, 70], dtype=np.int16)
+        sample = sample_hsv.astype(np.int16)
+        lower = np.maximum(sample - margins, 0).astype(np.uint8)
+        upper = np.minimum(sample + margins, [179, 255, 255]).astype(np.uint8)
+        self.tracker.lower_hsv = lower
+        self.tracker.upper_hsv = upper
+
+        for name, value in zip(("Low H", "Low S", "Low V"), lower):
+            cv2.setTrackbarPos(name, self.window_name, int(value))
+        for name, value in zip(("High H", "High S", "High V"), upper):
+            cv2.setTrackbarPos(name, self.window_name, int(value))
+
+        self.calibration_status = (
+            f"Sampled H:{sample_hsv[0]} S:{sample_hsv[1]} V:{sample_hsv[2]}. "
+            "Tune sliders to remove background or recover missed target areas."
+        )
 
     def image_callback(self, msg):
         if not rclpy.ok():
@@ -69,8 +117,10 @@ class ImageTrackerNode(Node):
             return
 
         preset_mode = cv2.getTrackbarPos(
-            "Preset (0:Custom 1:R 2:G 3:B)", self.window_name
+            "Preset 0:Custom 1:Red 2:Green 3:Blue", self.window_name
         )
+        self.active_preset_mode = preset_mode
+        self.latest_frame = frame.copy()
 
         if preset_mode == 1:
             self.tracker.set_color_preset("RED")
@@ -94,7 +144,8 @@ class ImageTrackerNode(Node):
             self.tracker.upper_hsv = np.array([u_h, u_s, u_v], dtype=np.uint8)
             active_color_label = "CUSTOM"
 
-        detections = self.tracker.process_objects(frame)
+        mask = self.tracker.create_mask(frame)
+        detections = self.tracker.process_objects(frame, mask=mask)
         objects_msg = ObjectStateArray()
         objects_msg.objects = []
         for cx, cy, confidence in detections:
@@ -119,16 +170,36 @@ class ImageTrackerNode(Node):
             state_msg.confidence = conf
         self.state_pub.publish(state_msg)
 
-        # Overlay Active Mode & Tracking Coordinates
+        # Keep calibration guidance visible over the live camera feed.
+        cv2.rectangle(frame, (0, 0), (frame.shape[1], 126), (24, 32, 38), -1)
         cv2.putText(
             frame,
-            f"Mode: {active_color_label}",
+            f"HSV CALIBRATION | Mode: {active_color_label} | Detections: {len(detections)}",
             (10, 30),
             cv2.FONT_HERSHEY_SIMPLEX,
-            0.7,
-            (0, 255, 255),
-            2,
+            0.58,
+            (90, 220, 240),
+            1,
+            cv2.LINE_AA,
         )
+        guide_lines = (
+            "1. Select a preset, or choose Custom (0).",
+            "2. In Custom mode, click the target to sample its starting HSV range.",
+            "3. In the mask window, target pixels should be white; background black.",
+            "4. Tune Low/High H, S, V sliders. Press Q or Esc to quit.",
+            self.calibration_status,
+        )
+        for index, line in enumerate(guide_lines, start=1):
+            cv2.putText(
+                frame,
+                line,
+                (10, 26 + index * 19),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.43,
+                (225, 230, 232),
+                1,
+                cv2.LINE_AA,
+            )
 
         for index, (cx, cy, conf) in enumerate(detections, start=1):
             cv2.circle(frame, (cx, cy), 5, (0, 0, 255), -1)
@@ -143,6 +214,7 @@ class ImageTrackerNode(Node):
             )
 
         cv2.imshow(self.window_name, frame)
+        cv2.imshow(self.mask_window_name, mask)
         key = cv2.waitKey(1) & 0xFF
         if key == ord("q") or key == 27:
             rclpy.shutdown()

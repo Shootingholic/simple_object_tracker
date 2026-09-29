@@ -65,6 +65,17 @@ def test_minimum_object_area_is_resolution_independent():
         assert confidence == pytest.approx(0.01, abs=0.002)
 
 
+def test_create_mask_shows_matching_color_as_white():
+    tracker = HSVObjectTracker()
+    img = np.zeros((200, 200, 3), dtype=np.uint8)
+    cv2.rectangle(img, (50, 50), (150, 150), (255, 0, 0), -1)
+
+    mask = tracker.create_mask(img)
+
+    assert mask[100, 100] == 255
+    assert mask[10, 10] == 0
+
+
 def test_minimum_object_area_percentage_filters_small_objects():
     tracker = HSVObjectTracker(min_object_area_percent=1.0)
     img = np.zeros((400, 400, 3), dtype=np.uint8)
@@ -226,6 +237,7 @@ def test_unknown_preset_does_not_change_tracker_state():
 def test_tracker_node_publishes_object_state_for_camera_image(monkeypatch):
     """Integration test for the camera-image to ObjectState ROS flow when the target is visible."""
     monkeypatch.setattr(cv2, "namedWindow", lambda *args, **kwargs: None)
+    monkeypatch.setattr(cv2, "setMouseCallback", lambda *args, **kwargs: None)
     monkeypatch.setattr(cv2, "createTrackbar", lambda *args, **kwargs: None)
     monkeypatch.setattr(cv2, "getTrackbarPos", lambda *args, **kwargs: 3)
     monkeypatch.setattr(cv2, "putText", lambda *args, **kwargs: None)
@@ -301,6 +313,7 @@ def test_tracker_node_publishes_object_state_for_camera_image(monkeypatch):
 def test_tracker_node_publishes_not_visible_for_empty_frame(monkeypatch):
     """Integration test for the camera-image to ObjectState ROS flow when no target is visible."""
     monkeypatch.setattr(cv2, "namedWindow", lambda *args, **kwargs: None)
+    monkeypatch.setattr(cv2, "setMouseCallback", lambda *args, **kwargs: None)
     monkeypatch.setattr(cv2, "createTrackbar", lambda *args, **kwargs: None)
     monkeypatch.setattr(cv2, "getTrackbarPos", lambda *args, **kwargs: 3)
     monkeypatch.setattr(cv2, "putText", lambda *args, **kwargs: None)
