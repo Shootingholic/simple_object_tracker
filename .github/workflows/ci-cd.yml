@@ -24,16 +24,32 @@ jobs:
           required-ros-distributions: jazzy
 
       - name: Install package dependencies
+        shell: bash
         run: |
+          source /opt/ros/jazzy/setup.bash
           rosdep update
-          rosdep install --from-paths . --ignore-src --rosdistro jazzy -r -y
+          rosdep install \
+            --from-paths . \
+            --ignore-src \
+            --rosdistro jazzy \
+            -r -y
 
       - name: Build package
-        run: colcon build --packages-up-to simple_object_track --cmake-args -DBUILD_TESTING=ON
+        shell: bash
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          colcon build \
+            --packages-up-to simple_object_track \
+            --cmake-args -DBUILD_TESTING=ON
 
       - name: Run tests
+        shell: bash
         run: |
-          colcon test --packages-select simple_object_track --event-handlers console_direct+
+          source /opt/ros/jazzy/setup.bash
+          source install/setup.bash
+          colcon test \
+            --packages-select simple_object_track \
+            --event-handlers console_direct+
           colcon test-result --all --verbose
 
   publish:
